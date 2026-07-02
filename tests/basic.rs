@@ -16,6 +16,14 @@ mod static_str {
     }
 }
 
+#[from_toml("tests/array.toml")]
+mod array {
+    #[root]
+    pub struct Config {
+        pub awnser_bytes : [u8; 2],
+    }
+}
+
 #[test]
 fn single_int() {
     assert_eq!(single_int::CONFIG.sample_rate, 48000)
@@ -24,4 +32,9 @@ fn single_int() {
 #[test]
 fn static_str() {
     assert_eq!(static_str::CONFIG.ssid, "test")
+}
+
+#[test]
+fn array() {
+    assert_eq!(array::CONFIG.awnser_bytes, [42, 64])
 }

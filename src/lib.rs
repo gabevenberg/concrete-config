@@ -7,7 +7,8 @@ use std::{
     path::PathBuf,
 };
 use syn::{
-    Error, Item, ItemEnum, ItemMod, ItemStruct, LitStr, TypeReference, parse2, spanned::Spanned,
+    Error, Expr, ExprLit, Item, ItemEnum, ItemMod, ItemStruct, Lit, LitStr, TypeArray,
+    TypeReference, parse2, spanned::Spanned,
 };
 use toml::{Value, map::Map};
 
@@ -83,7 +84,13 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
     }
     defs.insert(root_struct.ident.to_string(), TypeDef::Struct(&root_struct));
 
-    let con = render_struct(toml_value.as_table().expect("root of toml file is always a table"), &root_struct, &defs)?;
+    let con = render_struct(
+        toml_value
+            .as_table()
+            .expect("root of toml file is always a table"),
+        &root_struct,
+        &defs,
+    )?;
     let root_ident = &root_struct.ident;
     let mod_name = &module.ident;
     let toml_path_str = toml_path.to_str().expect("TOML path is not valid UTF-8");
@@ -145,7 +152,6 @@ fn render_value(
     defs: &HashMap<String, TypeDef>,
 ) -> Result<TokenStream, Error> {
     match ty {
-        syn::Type::Array(array) => todo!(),
         syn::Type::Path(path) => {
             macro_rules! primitive_arm {
                 ($t:ty, $toml:ident) => {
@@ -198,6 +204,35 @@ fn render_value(
                         Err(Error::new(path.span(), "Path not in defs."))
                     }
                 }
+            }
+        }
+        syn::Type::Array(array) => {
+            if let TypeArray {
+                len: Expr::Lit(ExprLit {
+                    lit: Lit::Int(l), ..
+                }),
+                elem: e,
+                ..
+            } = array
+            {
+                if let Value::Array(a) = value {
+                    if a.len() == l.base10_parse()? {
+                        let entries: Vec<TokenStream> = a
+                            .iter()
+                            .map(|v| render_value(v, e, defs))
+                            .collect::<Result<Vec<TokenStream>, Error>>()?;
+                        Ok(quote! {[#(#entries),*]})
+                    } else {
+                        Err(Error::new(
+                            array.span(),
+                            "Toml array and type array do not match in len",
+                        ))
+                    }
+                } else {
+                    Err(Error::new(array.span(), "Toml value is not an array"))
+                }
+            } else {
+                Err(Error::new(array.span(), "unsupported syntax"))
             }
         }
         syn::Type::Reference(reference) => {
