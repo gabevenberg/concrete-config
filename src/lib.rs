@@ -1,7 +1,9 @@
+#![allow(unused)]
 use proc_macro::TokenStream;
 use quote::quote;
 use std::{collections::HashMap, env, fs, path::PathBuf};
 use syn::{Item, ItemEnum, ItemMod, ItemStruct, LitStr, parse2, spanned::Spanned};
+use toml::Value;
 
 //the inner function just lets us return a result, and then have the error case of that result
 //turned into a neat compiler error.
@@ -28,7 +30,7 @@ fn from_toml_inner(
             .join(path.value());
     let content =
         fs::read_to_string(&toml_path).map_err(|e| syn::Error::new(path.span(), e.to_string()))?;
-    let toml_value: toml::Value =
+    let toml_value: Value =
         toml::from_str(&content).map_err(|e| syn::Error::new(path.span(), e.to_string()))?;
     eprintln!("{:#?}", toml_value);
 
@@ -91,4 +93,121 @@ fn from_toml_inner(
 enum TypeDef<'a> {
     Struct(&'a ItemStruct),
     Enum(&'a ItemEnum),
+}
+
+fn render_value(
+    value: &Value,
+    ty: &syn::Type,
+    defs: &HashMap<String, TypeDef>,
+) -> Result<proc_macro2::TokenStream, syn::Error> {
+    match ty {
+        syn::Type::Array(array) => todo!(),
+        syn::Type::Path(path) => {
+            match path
+                .path
+                .segments
+                .last()
+                .ok_or_else(|| syn::Error::new(path.span(), "Empty path?"))?
+                .ident
+                .to_string()
+                .as_str()
+            {
+                "u8" => {
+                    if let Value::Integer(n) = value {
+                        let n = *n as u8;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
+                    }
+                }
+                "u16" => {
+                    if let Value::Integer(n) = value {
+                        let n = *n as u16;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
+                    }
+                }
+                "u32" => {
+                    if let Value::Integer(n) = value {
+                        let n = *n as u32;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
+                    }
+                }
+                "u64" => {
+                    if let Value::Integer(n) = value {
+                        let n = *n as u64;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
+                    }
+                }
+                "i8" => {
+                    if let Value::Integer(n) = value {
+                        let n = *n as i8;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
+                    }
+                }
+                "i16" => {
+                    if let Value::Integer(n) = value {
+                        let n = *n as i16;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
+                    }
+                }
+                "i32" => {
+                    if let Value::Integer(n) = value {
+                        let n = *n as i32;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
+                    }
+                }
+                "i64" => {
+                    if let Value::Integer(n) = value {
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
+                    }
+                }
+                "f32" => {
+                    if let Value::Float(n) = value {
+                        let n = *n as f32;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not a float"))
+                    }
+                }
+                "f64" => {
+                    if let Value::Float(n) = value {
+                        Ok(quote! {#n})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not a float"))
+                    }
+                }
+                "bool" => {
+                    if let Value::Boolean(b) = value {
+                        Ok(quote! {#b})
+                    } else {
+                        Err(syn::Error::new(path.span(), "Toml value is not a bool"))
+                    }
+                }
+                i => {
+                    if let Some(i) = defs.get(i) {
+                        todo!()
+                    } else {
+                        Err(syn::Error::new(path.span(), "Path not in defs."))
+                    }
+                }
+            }
+        }
+        syn::Type::Reference(reference) => todo!(),
+        syn::Type::Tuple(tupe) => todo!(),
+        _ => Err(syn::Error::new(ty.span(), "Unssuported type")),
+    }
 }
