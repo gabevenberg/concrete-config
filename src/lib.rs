@@ -1,28 +1,29 @@
 #![allow(unused)]
-use proc_macro::TokenStream;
-use quote::quote;
-use std::{collections::HashMap, env, fs, path::PathBuf};
+use proc_macro2::TokenStream;
+use quote::{ToTokens, quote};
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs,
+    path::PathBuf,
+};
 use syn::{Item, ItemEnum, ItemMod, ItemStruct, LitStr, parse2, spanned::Spanned};
 use toml::Value;
 
 //the inner function just lets us return a result, and then have the error case of that result
 //turned into a neat compiler error.
 #[proc_macro_attribute]
-pub fn from_toml(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn from_toml(
+    args: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     from_toml_inner(args.into(), input.into())
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }
 
-fn from_toml_inner(
-    args: proc_macro2::TokenStream,
-    input: proc_macro2::TokenStream,
-) -> Result<proc_macro2::TokenStream, syn::Error> {
+fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream, syn::Error> {
     let path: LitStr = parse2(args)?;
     let module: ItemMod = parse2(input)?;
-
-    eprintln!("{}", path.value());
-    eprintln!("{:#?}", module);
 
     //parse the toml, returning any errors in opening the file or parsing as compile errors
     let toml_path =
@@ -32,7 +33,6 @@ fn from_toml_inner(
         fs::read_to_string(&toml_path).map_err(|e| syn::Error::new(path.span(), e.to_string()))?;
     let toml_value: Value =
         toml::from_str(&content).map_err(|e| syn::Error::new(path.span(), e.to_string()))?;
-    eprintln!("{:#?}", toml_value);
 
     let items = &module
         .content
@@ -62,11 +62,8 @@ fn from_toml_inner(
         ));
     };
 
-    eprintln!("{:#?}", other_items);
-    eprintln!("{:#?}", root_struct);
-
     let mut defs: HashMap<String, TypeDef> = HashMap::new();
-    for item in other_items {
+    for item in &other_items {
         match item {
             Item::Struct(s) => {
                 defs.insert(s.ident.to_string(), TypeDef::Struct(s));
@@ -84,9 +81,20 @@ fn from_toml_inner(
     }
     defs.insert(root_struct.ident.to_string(), TypeDef::Struct(&root_struct));
 
-    eprintln!("{:#?}", defs);
-
-    todo!()
+    let con = render_struct(&toml_value, &root_struct, &defs)?;
+    let root_ident = &root_struct.ident;
+    let mod_name = &module.ident;
+    let toml_path_str = toml_path.to_str().expect("TOML path is not valid UTF-8");
+    let output = quote! {
+        mod #mod_name {
+            #root_struct
+            #(#other_items)* 
+            pub const CONFIG: #root_ident = #con;
+            const _:usize = include_bytes!(#toml_path_str).len();
+        }
+    };
+    eprintln!("{}", output);
+    Ok(output)
 }
 
 #[derive(Debug)]
@@ -95,11 +103,49 @@ enum TypeDef<'a> {
     Enum(&'a ItemEnum),
 }
 
+fn render_struct(
+    value: &Value,
+    st: &ItemStruct,
+    defs: &HashMap<String, TypeDef>,
+) -> Result<TokenStream, syn::Error> {
+    let mut constructed: HashSet<String> = HashSet::new();
+    let mut streams: Vec<TokenStream> = Vec::new();
+    for field in &st.fields {
+        let ident_str = field.ident.as_ref().expect("empty ident???").to_string();
+        if let Some(v) = value.get(&ident_str) {
+            let value = render_value(v, &field.ty, defs)?;
+            let ident = field.ident.as_ref().expect("empty ident?");
+            let declaration = quote! {#ident: #value};
+            streams.push(declaration);
+            constructed.insert(ident_str);
+        } else {
+            return Err(syn::Error::new(
+                st.span(),
+                "found field with no matching TOML value",
+            ));
+        }
+    }
+    for entry in value
+        .as_table()
+        .expect("checked in render_value that it is a table")
+        .keys()
+    {
+        if !constructed.contains(entry) {
+            return Err(syn::Error::new(
+                st.span(),
+                format!("Unrecognized key in TOML table: {}", entry),
+            ));
+        }
+    }
+    let ident = &st.ident;
+    Ok(quote! {#ident { #(#streams),*}})
+}
+
 fn render_value(
     value: &Value,
     ty: &syn::Type,
     defs: &HashMap<String, TypeDef>,
-) -> Result<proc_macro2::TokenStream, syn::Error> {
+) -> Result<TokenStream, syn::Error> {
     match ty {
         syn::Type::Array(array) => todo!(),
         syn::Type::Path(path) => {
@@ -199,7 +245,19 @@ fn render_value(
                 }
                 i => {
                     if let Some(i) = defs.get(i) {
-                        todo!()
+                        match i {
+                            TypeDef::Struct(item_struct) => {
+                                if let Value::Table(t) = value {
+                                    render_struct(value, item_struct, defs)
+                                } else {
+                                    Err(syn::Error::new(
+                                        item_struct.span(),
+                                        "Toml value is not a table",
+                                    ))
+                                }
+                            }
+                            TypeDef::Enum(item_enum) => todo!(),
+                        }
                     } else {
                         Err(syn::Error::new(path.span(), "Path not in defs."))
                     }
