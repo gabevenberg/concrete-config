@@ -6,7 +6,7 @@ use std::{
     env, fs,
     path::PathBuf,
 };
-use syn::{Item, ItemEnum, ItemMod, ItemStruct, LitStr, parse2, spanned::Spanned};
+use syn::{Error, Item, ItemEnum, ItemMod, ItemStruct, LitStr, parse2, spanned::Spanned};
 use toml::Value;
 
 //the inner function just lets us return a result, and then have the error case of that result
@@ -21,7 +21,7 @@ pub fn from_toml(
         .into()
 }
 
-fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream, syn::Error> {
+fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream, Error> {
     let path: LitStr = parse2(args)?;
     let module: ItemMod = parse2(input)?;
 
@@ -30,14 +30,14 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"))
             .join(path.value());
     let content =
-        fs::read_to_string(&toml_path).map_err(|e| syn::Error::new(path.span(), e.to_string()))?;
+        fs::read_to_string(&toml_path).map_err(|e| Error::new(path.span(), e.to_string()))?;
     let toml_value: Value =
-        toml::from_str(&content).map_err(|e| syn::Error::new(path.span(), e.to_string()))?;
+        toml::from_str(&content).map_err(|e| Error::new(path.span(), e.to_string()))?;
 
     let items = &module
         .content
         .as_ref()
-        .ok_or_else(|| syn::Error::new(module.span(), "Module must have content"))?
+        .ok_or_else(|| Error::new(module.span(), "Module must have content"))?
         .1;
     let (root_structs, other_items): (Vec<_>, Vec<_>) = items.iter().partition(|item| {
         if let Item::Struct(s) = item {
@@ -56,7 +56,7 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
             unreachable!()
         }
     } else {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             module.span(),
             "Must have exactly one struct with `#[root] in the config module.",
         ));
@@ -72,7 +72,7 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
                 defs.insert(e.ident.to_string(), TypeDef::Enum(e));
             }
             i => {
-                return Err(syn::Error::new(
+                return Err(Error::new(
                     i.span(),
                     "Can only have structs and enums in the toml_config module.",
                 ));
@@ -88,7 +88,7 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
     let output = quote! {
         mod #mod_name {
             #root_struct
-            #(#other_items)* 
+            #(#other_items)*
             pub const CONFIG: #root_ident = #con;
             const _:usize = include_bytes!(#toml_path_str).len();
         }
@@ -107,7 +107,7 @@ fn render_struct(
     value: &Value,
     st: &ItemStruct,
     defs: &HashMap<String, TypeDef>,
-) -> Result<TokenStream, syn::Error> {
+) -> Result<TokenStream, Error> {
     let mut constructed: HashSet<String> = HashSet::new();
     let mut streams: Vec<TokenStream> = Vec::new();
     for field in &st.fields {
@@ -119,7 +119,7 @@ fn render_struct(
             streams.push(declaration);
             constructed.insert(ident_str);
         } else {
-            return Err(syn::Error::new(
+            return Err(Error::new(
                 st.span(),
                 "found field with no matching TOML value",
             ));
@@ -131,7 +131,7 @@ fn render_struct(
         .keys()
     {
         if !constructed.contains(entry) {
-            return Err(syn::Error::new(
+            return Err(Error::new(
                 st.span(),
                 format!("Unrecognized key in TOML table: {}", entry),
             ));
@@ -145,104 +145,45 @@ fn render_value(
     value: &Value,
     ty: &syn::Type,
     defs: &HashMap<String, TypeDef>,
-) -> Result<TokenStream, syn::Error> {
+) -> Result<TokenStream, Error> {
     match ty {
         syn::Type::Array(array) => todo!(),
         syn::Type::Path(path) => {
+            macro_rules! primitive_arm {
+                ($t:ty, $toml:ident) => {
+                    if let Value::$toml(n) = value {
+                        let n = *n as $t;
+                        Ok(quote! {#n})
+                    } else {
+                        Err(Error::new(
+                            path.span(),
+                            format!("Toml value is not an {}", stringify!($toml)),
+                        ))
+                    }
+                };
+            }
             match path
                 .path
                 .segments
                 .last()
-                .ok_or_else(|| syn::Error::new(path.span(), "Empty path?"))?
+                .ok_or_else(|| Error::new(path.span(), "Empty path?"))?
                 .ident
                 .to_string()
                 .as_str()
             {
-                "u8" => {
-                    if let Value::Integer(n) = value {
-                        let n = *n as u8;
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
-                    }
-                }
-                "u16" => {
-                    if let Value::Integer(n) = value {
-                        let n = *n as u16;
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
-                    }
-                }
-                "u32" => {
-                    if let Value::Integer(n) = value {
-                        let n = *n as u32;
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
-                    }
-                }
-                "u64" => {
-                    if let Value::Integer(n) = value {
-                        let n = *n as u64;
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
-                    }
-                }
-                "i8" => {
-                    if let Value::Integer(n) = value {
-                        let n = *n as i8;
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
-                    }
-                }
-                "i16" => {
-                    if let Value::Integer(n) = value {
-                        let n = *n as i16;
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
-                    }
-                }
-                "i32" => {
-                    if let Value::Integer(n) = value {
-                        let n = *n as i32;
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
-                    }
-                }
-                "i64" => {
-                    if let Value::Integer(n) = value {
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not an integer"))
-                    }
-                }
-                "f32" => {
-                    if let Value::Float(n) = value {
-                        let n = *n as f32;
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not a float"))
-                    }
-                }
-                "f64" => {
-                    if let Value::Float(n) = value {
-                        Ok(quote! {#n})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not a float"))
-                    }
-                }
-                "bool" => {
-                    if let Value::Boolean(b) = value {
-                        Ok(quote! {#b})
-                    } else {
-                        Err(syn::Error::new(path.span(), "Toml value is not a bool"))
-                    }
-                }
+                "u8" => primitive_arm!(u8, Integer),
+                "u16" => primitive_arm!(u16, Integer),
+                "u32" => primitive_arm!(u32, Integer),
+                "u64" => primitive_arm!(u64, Integer),
+                "usize" => primitive_arm!(usize, Integer),
+                "i8" => primitive_arm!(i8, Integer),
+                "i16" => primitive_arm!(i16, Integer),
+                "i32" => primitive_arm!(i32, Integer),
+                "i64" => primitive_arm!(i64, Integer),
+                "isize" => primitive_arm!(isize, Integer),
+                "f32" => primitive_arm!(f32, Float),
+                "f64" => primitive_arm!(f64, Float),
+                "bool" => primitive_arm!(bool, Boolean),
                 i => {
                     if let Some(i) = defs.get(i) {
                         match i {
@@ -250,22 +191,19 @@ fn render_value(
                                 if let Value::Table(t) = value {
                                     render_struct(value, item_struct, defs)
                                 } else {
-                                    Err(syn::Error::new(
-                                        item_struct.span(),
-                                        "Toml value is not a table",
-                                    ))
+                                    Err(Error::new(item_struct.span(), "Toml value is not a table"))
                                 }
                             }
                             TypeDef::Enum(item_enum) => todo!(),
                         }
                     } else {
-                        Err(syn::Error::new(path.span(), "Path not in defs."))
+                        Err(Error::new(path.span(), "Path not in defs."))
                     }
                 }
             }
         }
         syn::Type::Reference(reference) => todo!(),
         syn::Type::Tuple(tupe) => todo!(),
-        _ => Err(syn::Error::new(ty.span(), "Unssuported type")),
+        _ => Err(Error::new(ty.span(), "Unssuported type")),
     }
 }
