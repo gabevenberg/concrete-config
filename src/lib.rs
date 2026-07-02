@@ -1,6 +1,5 @@
-#![allow(unused)]
 use proc_macro2::TokenStream;
-use quote::{ToTokens, quote};
+use quote::quote;
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
@@ -102,7 +101,6 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
             const _:usize = include_bytes!(#toml_path_str).len();
         }
     };
-    eprintln!("{}", output);
     Ok(output)
 }
 
@@ -120,17 +118,17 @@ fn render_struct(
     let mut constructed: HashSet<String> = HashSet::new();
     let mut streams: Vec<TokenStream> = Vec::new();
     for field in &st.fields {
-        let ident_str = field.ident.as_ref().expect("empty ident???").to_string();
+        let ident = field.ident.as_ref().expect("empty ident?");
+        let ident_str = ident.to_string();
         if let Some(v) = value.get(&ident_str) {
             let value = render_value(v, &field.ty, defs)?;
-            let ident = field.ident.as_ref().expect("empty ident?");
             let declaration = quote! {#ident: #value};
             streams.push(declaration);
             constructed.insert(ident_str);
         } else {
             return Err(Error::new(
                 st.span(),
-                "found field with no matching TOML value",
+                format!("found field with no matching TOML value: {}", ident_str),
             ));
         }
     }
@@ -198,7 +196,28 @@ fn render_value(
                                     Err(Error::new(item_struct.span(), "Toml value is not a table"))
                                 }
                             }
-                            TypeDef::Enum(item_enum) => todo!(),
+                            TypeDef::Enum(item_enum) => {
+                                if let Value::String(s) = value {
+                                    if let Some(e) = item_enum
+                                        .variants
+                                        .iter()
+                                        .find(|v| v.ident.to_string().as_str() == s)
+                                    {
+                                        let t = &item_enum.ident;
+                                        Ok(quote! {#t::#e})
+                                    } else {
+                                        Err(Error::new(
+                                            item_enum.span(),
+                                            format!(
+                                                "Toml string does not match any variant: {}",
+                                                s
+                                            ),
+                                        ))
+                                    }
+                                } else {
+                                    Err(Error::new(item_enum.span(), "Toml value is not a String"))
+                                }
+                            }
                         }
                     } else {
                         Err(Error::new(path.span(), "Path not in defs."))
@@ -253,7 +272,7 @@ fn render_value(
                 Err(Error::new(reference.span(), "unsupported type"))
             }
         }
-        syn::Type::Tuple(tupe) => todo!(),
-        _ => Err(Error::new(ty.span(), "Unssuported type")),
+        syn::Type::Tuple(_) => todo!(),
+        _ => Err(Error::new(ty.span(), "Unsupported type")),
     }
 }

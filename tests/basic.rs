@@ -20,7 +20,26 @@ mod static_str {
 mod array {
     #[root]
     pub struct Config {
-        pub awnser_bytes : [u8; 2],
+        pub awnser_bytes: [u8; 2],
+    }
+}
+
+#[from_toml("tests/enums.toml")]
+mod r#enum {
+    #[allow(unused)]
+
+    #[derive(Debug, Eq, PartialEq)]
+    pub enum LogLevel {
+        Trace,
+        Debug,
+        Info,
+        Warn,
+        Error,
+    }
+
+    #[root]
+    pub struct Config {
+        pub log_level: LogLevel,
     }
 }
 
@@ -37,4 +56,9 @@ fn static_str() {
 #[test]
 fn array() {
     assert_eq!(array::CONFIG.awnser_bytes, [42, 64])
+}
+
+#[test]
+fn r#enum() {
+    assert_eq!(r#enum::CONFIG.log_level, r#enum::LogLevel::Warn)
 }
