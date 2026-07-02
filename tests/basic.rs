@@ -22,6 +22,6 @@ fn single_int() {
 }
 
 #[test]
-fn static_str(){
+fn static_str() {
     assert_eq!(static_str::CONFIG.ssid, "test")
 }

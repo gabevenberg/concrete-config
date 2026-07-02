@@ -6,8 +6,10 @@ use std::{
     env, fs,
     path::PathBuf,
 };
-use syn::{Error, Item, ItemEnum, ItemMod, ItemStruct, LitStr, parse2, spanned::Spanned};
-use toml::Value;
+use syn::{
+    Error, Item, ItemEnum, ItemMod, ItemStruct, LitStr, TypeReference, parse2, spanned::Spanned,
+};
+use toml::{Value, map::Map};
 
 //the inner function just lets us return a result, and then have the error case of that result
 //turned into a neat compiler error.
@@ -81,7 +83,7 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
     }
     defs.insert(root_struct.ident.to_string(), TypeDef::Struct(&root_struct));
 
-    let con = render_struct(&toml_value, &root_struct, &defs)?;
+    let con = render_struct(toml_value.as_table().expect("root of toml file is always a table"), &root_struct, &defs)?;
     let root_ident = &root_struct.ident;
     let mod_name = &module.ident;
     let toml_path_str = toml_path.to_str().expect("TOML path is not valid UTF-8");
@@ -104,7 +106,7 @@ enum TypeDef<'a> {
 }
 
 fn render_struct(
-    value: &Value,
+    value: &Map<String, Value>,
     st: &ItemStruct,
     defs: &HashMap<String, TypeDef>,
 ) -> Result<TokenStream, Error> {
@@ -125,11 +127,7 @@ fn render_struct(
             ));
         }
     }
-    for entry in value
-        .as_table()
-        .expect("checked in render_value that it is a table")
-        .keys()
-    {
+    for entry in value.keys() {
         if !constructed.contains(entry) {
             return Err(Error::new(
                 st.span(),
@@ -189,7 +187,7 @@ fn render_value(
                         match i {
                             TypeDef::Struct(item_struct) => {
                                 if let Value::Table(t) = value {
-                                    render_struct(value, item_struct, defs)
+                                    render_struct(t, item_struct, defs)
                                 } else {
                                     Err(Error::new(item_struct.span(), "Toml value is not a table"))
                                 }
@@ -202,7 +200,24 @@ fn render_value(
                 }
             }
         }
-        syn::Type::Reference(reference) => todo!(),
+        syn::Type::Reference(reference) => {
+            if let TypeReference {
+                lifetime: Some(lt),
+                elem: e,
+                ..
+            } = reference
+                && matches!(e.as_ref(), syn::Type::Path(p) if p.path.is_ident("str"))
+                && lt.ident == "static"
+            {
+                if let Value::String(s) = value {
+                    Ok(quote! {#s})
+                } else {
+                    Err(Error::new(reference.span(), "Toml value is not a string"))
+                }
+            } else {
+                Err(Error::new(reference.span(), "unsupported type"))
+            }
+        }
         syn::Type::Tuple(tupe) => todo!(),
         _ => Err(Error::new(ty.span(), "Unssuported type")),
     }
