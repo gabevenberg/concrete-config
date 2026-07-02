@@ -11,8 +11,6 @@ use syn::{
 };
 use toml::{Value, map::Map};
 
-//the inner function just lets us return a result, and then have the error case of that result
-//turned into a neat compiler error.
 #[proc_macro_attribute]
 pub fn from_toml(
     args: proc_macro::TokenStream,
@@ -23,11 +21,12 @@ pub fn from_toml(
         .into()
 }
 
+//the inner function just lets us return a result, and then have the error case of that result
+//turned into a neat compiler error.
 fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream, Error> {
     let path: LitStr = parse2(args)?;
     let module: ItemMod = parse2(input)?;
 
-    //parse the toml, returning any errors in opening the file or parsing as compile errors
     let toml_path =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"))
             .join(path.value());
@@ -52,6 +51,7 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
     let root_struct = if root_structs.len() == 1 {
         if let Item::Struct(s) = root_structs[0] {
             let mut s = s.clone();
+            // as #[root] is not actually a rust attribute, remove it from the generated code.
             s.attrs.retain(|a| !a.path().is_ident("root"));
             s
         } else {
@@ -60,7 +60,7 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
     } else {
         return Err(Error::new(
             module.span(),
-            "Must have exactly one struct with `#[root] in the config module.",
+            "Must have exactly one struct with `#[root]` in the config module.",
         ));
     };
 
@@ -81,7 +81,6 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
             }
         }
     }
-    defs.insert(root_struct.ident.to_string(), TypeDef::Struct(&root_struct));
 
     let con = render_struct(
         toml_value
@@ -95,9 +94,15 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
     let toml_path_str = toml_path.to_str().expect("TOML path is not valid UTF-8");
     let output = quote! {
         mod #mod_name {
+            // we allow dead code in here because if there is an enum, most likely not every variant
+            // will be constructed for a particular compilation.
+            #![allow(dead_code)]
             #root_struct
             #(#other_items)*
             pub const CONFIG: #root_ident = #con;
+            // This doesn't include anything in the final binary (at least if any optimization is
+            // done), but it does tell cargo that the toml file is a dependency of this file, and
+            // that we should rebuild when the toml file is changed.
             const _:usize = include_bytes!(#toml_path_str).len();
         }
     };
@@ -118,7 +123,10 @@ fn render_struct(
     let mut constructed: HashSet<String> = HashSet::new();
     let mut streams: Vec<TokenStream> = Vec::new();
     for field in &st.fields {
-        let ident = field.ident.as_ref().expect("empty ident?");
+        let ident = field
+            .ident
+            .as_ref()
+            .ok_or_else(|| Error::new(field.span(), "Tuple structs are not yet supported"))?;
         let ident_str = ident.to_string();
         if let Some(v) = value.get(&ident_str) {
             let value = render_value(v, &field.ty, defs)?;
@@ -151,6 +159,7 @@ fn render_value(
 ) -> Result<TokenStream, Error> {
     match ty {
         syn::Type::Path(path) => {
+            //Macro to reduce boilerplate across all the primitive type arms.
             macro_rules! primitive_arm {
                 ($t:ty, $toml:ident) => {
                     if let Value::$toml(n) = value {
@@ -186,43 +195,7 @@ fn render_value(
                 "f32" => primitive_arm!(f32, Float),
                 "f64" => primitive_arm!(f64, Float),
                 "bool" => primitive_arm!(bool, Boolean),
-                i => {
-                    if let Some(i) = defs.get(i) {
-                        match i {
-                            TypeDef::Struct(item_struct) => {
-                                if let Value::Table(t) = value {
-                                    render_struct(t, item_struct, defs)
-                                } else {
-                                    Err(Error::new(item_struct.span(), "Toml value is not a table"))
-                                }
-                            }
-                            TypeDef::Enum(item_enum) => {
-                                if let Value::String(s) = value {
-                                    if let Some(e) = item_enum
-                                        .variants
-                                        .iter()
-                                        .find(|v| v.ident.to_string().as_str() == s)
-                                    {
-                                        let t = &item_enum.ident;
-                                        Ok(quote! {#t::#e})
-                                    } else {
-                                        Err(Error::new(
-                                            item_enum.span(),
-                                            format!(
-                                                "Toml string does not match any variant: {}",
-                                                s
-                                            ),
-                                        ))
-                                    }
-                                } else {
-                                    Err(Error::new(item_enum.span(), "Toml value is not a String"))
-                                }
-                            }
-                        }
-                    } else {
-                        Err(Error::new(path.span(), "Path not in defs."))
-                    }
-                }
+                ident => render_composite_type(value, defs, path, ident),
             }
         }
         syn::Type::Array(array) => {
@@ -251,7 +224,10 @@ fn render_value(
                     Err(Error::new(array.span(), "Toml value is not an array"))
                 }
             } else {
-                Err(Error::new(array.span(), "unsupported syntax"))
+                Err(Error::new(
+                    array.span(),
+                    "unsupported syntax (Array lengths must be literal ints, not expressions)",
+                ))
             }
         }
         syn::Type::Reference(reference) => {
@@ -272,7 +248,51 @@ fn render_value(
                 Err(Error::new(reference.span(), "unsupported type"))
             }
         }
-        syn::Type::Tuple(_) => todo!(),
+        syn::Type::Tuple(tup) => Err(Error::new(tup.span(), "Tuple support not implemented yet")),
         _ => Err(Error::new(ty.span(), "Unsupported type")),
+    }
+}
+
+fn render_composite_type(
+    value: &Value,
+    defs: &HashMap<String, TypeDef<'_>>,
+    path: &syn::TypePath,
+    ident: &str,
+) -> Result<TokenStream, Error> {
+    if let Some(i) = defs.get(ident) {
+        match i {
+            TypeDef::Struct(item_struct) => {
+                if let Value::Table(t) = value {
+                    render_struct(t, item_struct, defs)
+                } else {
+                    Err(Error::new(item_struct.span(), "Toml value is not a table"))
+                }
+            }
+            TypeDef::Enum(item_enum) => {
+                if let Value::String(s) = value {
+                    render_enum(item_enum, s)
+                } else {
+                    Err(Error::new(item_enum.span(), "Toml value is not a String"))
+                }
+            }
+        }
+    } else {
+        Err(Error::new(path.span(), "Path not in defs."))
+    }
+}
+
+fn render_enum(item_enum: &ItemEnum, toml_str: &str) -> Result<TokenStream, Error> {
+    if let Some(e) = item_enum
+        .variants
+        .iter()
+        .find(|v| v.ident.to_string().as_str() == toml_str)
+    {
+        let t = &item_enum.ident;
+        Ok(quote! {#t::#e})
+    } else {
+        Err(Error::new(
+            item_enum.span(),
+            format!("Toml string does not match any variant: {}", toml_str),
+        ))
     }
 }

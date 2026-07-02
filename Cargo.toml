@@ -1,6 +1,12 @@
 [package]
-name = "toml-const"
+name = "concrete-config"
 version = "0.1.0"
+description = "Set complex build-time constants from a toml file"
+license = "EUPL-1.2"
+readme = "README.md"
+repository = "https://github.com/gabevenberg/concrete-config"
+keywords = ["toml", "const", "build-time", "config"]
+categories =["config", "development-tools::build-utils", "embedded", "no-std"]
 edition = "2024"
 
 [lib]

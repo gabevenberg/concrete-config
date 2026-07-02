@@ -1,0 +1,15 @@
+version = 3
+
+[uart]
+baud = 115200
+stop_bits = 1
+parity = "Even"
+data_bits = 8
+
+[[leds]]
+pin = 10
+pattern = [64, 255, 32]
+
+[[leds]]
+pin = 12
+pattern = [255, 128, 16]
