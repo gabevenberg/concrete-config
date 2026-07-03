@@ -273,10 +273,7 @@ fn render_value(
                             #n
                         })
                     } else {
-                        Err(Error::new(
-                            path.span(),
-                            "Toml value is not a bool",
-                        ))
+                        Err(Error::new(path.span(), "Toml value is not a bool"))
                     }
                 }
                 ident => render_composite_type(value, defs, path, ident),

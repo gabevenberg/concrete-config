@@ -70,8 +70,12 @@ mod floats {
 fn floats() {
     assert_eq!(floats::CONFIG.gain, 2.75);
     assert_eq!(floats::CONFIG.big, 1.5e300);
-    assert!(floats::CONFIG.positive_inf.is_infinite() && floats::CONFIG.positive_inf.is_sign_positive());
-    assert!(floats::CONFIG.negative_inf.is_infinite() && floats::CONFIG.negative_inf.is_sign_negative());
+    assert!(
+        floats::CONFIG.positive_inf.is_infinite() && floats::CONFIG.positive_inf.is_sign_positive()
+    );
+    assert!(
+        floats::CONFIG.negative_inf.is_infinite() && floats::CONFIG.negative_inf.is_sign_negative()
+    );
     assert!(floats::CONFIG.not_a_number.is_nan());
 }
 
