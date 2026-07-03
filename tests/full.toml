@@ -9,7 +9,9 @@ data_bits = 8
 [[leds]]
 pin = 10
 pattern = [64, 255, 32]
+pattern_time = 0.5
 
 [[leds]]
 pin = 12
 pattern = [255, 128, 16]
+pattern_time = 1.25

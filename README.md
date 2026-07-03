@@ -32,7 +32,7 @@ use concrete_config::concrete_toml;
 #[concrete_toml("tests/full.toml")]
 mod config {
     #[root]
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, PartialEq)]
     pub struct Config {
         pub version: u32,
         pub uart: Uart,
@@ -54,16 +54,18 @@ mod config {
         Odd,
     }
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, PartialEq)]
     pub struct Led {
         pub pin: u8,
         pub pattern: [u8; 3],
+        pub pattern_time: f32,
     }
 }
 
 assert_eq!(config::CONFIG.version, 3);
 assert_eq!(config::CONFIG.uart.parity, config::Parity::Even);
 assert_eq!(config::CONFIG.leds[1].pattern, [255, 128, 16]);
+assert_eq!(config::CONFIG.leds[0].pattern_time, 0.5);
 ```
 
 And the following content in `tests/full.toml`:
@@ -80,10 +82,12 @@ data_bits = 8
 [[leds]]
 pin = 10
 pattern = [64, 255, 32]
+pattern_time = 0.5
 
 [[leds]]
 pin = 12
 pattern = [255, 128, 16]
+pattern_time = 1.25
 
 ```
 
@@ -93,7 +97,7 @@ Then the `concrete_toml` macro will expand the config module to this (run throug
 mod config {
     #![allow(dead_code)]
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, PartialEq)]
     pub struct Config {
         pub version: u32,
         pub uart: Uart,
@@ -115,10 +119,11 @@ mod config {
         Odd,
     }
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, PartialEq)]
     pub struct Led {
         pub pin: u8,
         pub pattern: [u8; 3],
+        pub pattern_time: f32,
     }
 
     pub const CONFIG: Config = Config {
@@ -133,10 +138,12 @@ mod config {
             Led {
                 pin: 10u8,
                 pattern: [64u8, 255u8, 32u8],
+                pattern_time: 0.5f32,
             },
             Led {
                 pin: 12u8,
                 pattern: [255u8, 128u8, 16u8],
+                pattern_time: 1.25f32,
             },
         ],
     };
@@ -161,7 +168,7 @@ Some notes on the expansion:
   Under no circumstances is the complete contents of the config file included in the binary.
 * As macros run on the host, bounds checking for `usize` and `isize` will be for the host architecture, not the target architecture.
   Be careful when using these types.
-  Rustc does perform a bounds check on literals for the target architecture, but the error message is not pretty.
+  `rustc` does perform a bounds check on literals for the target architecture, but the error message is not pretty.
 
 ## Limitations/not supported yet
 The following are not supported and will produce compiler errors:

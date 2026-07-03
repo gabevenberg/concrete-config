@@ -39,6 +39,27 @@ fn array() {
     assert_eq!(array::CONFIG.answer_bytes, [42, 64])
 }
 
+#[concrete_toml("tests/floats.toml")]
+mod floats {
+    #[root]
+    pub struct Config {
+        pub gain: f32,
+        pub big: f64,
+        pub positive_inf: f32,
+        pub negative_inf: f64,
+        pub not_a_number: f32,
+    }
+}
+
+#[test]
+fn floats() {
+    assert_eq!(floats::CONFIG.gain, 2.75);
+    assert_eq!(floats::CONFIG.big, 1.5e300);
+    assert!(floats::CONFIG.positive_inf.is_infinite() && floats::CONFIG.positive_inf.is_sign_positive());
+    assert!(floats::CONFIG.negative_inf.is_infinite() && floats::CONFIG.negative_inf.is_sign_negative());
+    assert!(floats::CONFIG.not_a_number.is_nan());
+}
+
 #[concrete_toml("tests/enums.toml")]
 mod r#enum {
 
@@ -65,7 +86,7 @@ fn r#enum() {
 #[concrete_toml("tests/full.toml")]
 mod full {
     #[root]
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, PartialEq)]
     pub struct Config {
         pub version: u32,
         pub uart: Uart,
@@ -87,10 +108,11 @@ mod full {
         Odd,
     }
 
-    #[derive(Debug, Eq, PartialEq)]
+    #[derive(Debug, PartialEq)]
     pub struct Led {
         pub pin: u8,
         pub pattern: [u8; 3],
+        pub pattern_time: f32,
     }
 }
 
@@ -110,10 +132,12 @@ fn full() {
                 full::Led {
                     pin: 10,
                     pattern: [64, 255, 32],
+                    pattern_time: 0.5,
                 },
                 full::Led {
                     pin: 12,
                     pattern: [255, 128, 16],
+                    pattern_time: 1.25,
                 },
             ]
         }

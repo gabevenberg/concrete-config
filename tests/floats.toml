@@ -1,0 +1,5 @@
+gain = 2.75
+big = 1.5e300
+positive_inf = inf
+negative_inf = -inf
+not_a_number = nan
