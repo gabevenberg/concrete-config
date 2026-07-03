@@ -275,7 +275,7 @@ fn render_value(
                     } else {
                         Err(Error::new(
                             path.span(),
-                            format!("Toml value is not an {}", stringify!(Boolean)),
+                            "Toml value is not a bool",
                         ))
                     }
                 }

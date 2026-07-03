@@ -9,6 +9,7 @@ keywords = ["toml", "const", "build-time", "config"]
 categories =["config", "development-tools::build-utils", "embedded", "no-std"]
 edition = "2024"
 rust-version = "1.88"
+exclude = ["flake.nix", "flake.lock", "treefmt.nix", ".envrc", "rust-toolchain.toml"]
 
 [lib]
 proc-macro = true
