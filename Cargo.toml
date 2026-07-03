@@ -8,6 +8,7 @@ repository = "https://github.com/gabevenberg/concrete-config"
 keywords = ["toml", "const", "build-time", "config"]
 categories =["config", "development-tools::build-utils", "embedded", "no-std"]
 edition = "2024"
+rust-version = "1.88"
 
 [lib]
 proc-macro = true
@@ -17,13 +18,3 @@ proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "2.0", features = ["extra-traits", "full"] }
 toml = "1.1"
-
-[profile.release]
-codegen-units = 1        # LLVM can perform better optimizations using a single thread
-debug = 0
-strip = "symbols"
-debug-assertions = false
-incremental = false
-lto = 'fat'
-opt-level = 3
-overflow-checks = false

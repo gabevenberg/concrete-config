@@ -156,9 +156,12 @@ or any field in the struct that is not in the TOML file, the macro will output a
 Some notes on the expansion:
 * The `#![allow(dead_code)]` is automatically added to the module, as it is very likely if you include enums in your config that in a given compilation not all of them will be constructed.
   This is to be expected, but cargo does not know that and marks it as dead code.
-* The `const _: usize = include_bytes!("config.toml").len()` is a way of telling cargo that this file depends on `tests/full.toml`, and to rebuild if it changes.
+* The `const _: usize = include_bytes!("tests/full.toml").len()` is a way of telling cargo that this file depends on `tests/full.toml`, and to rebuild if it changes.
   If no optimizations happen, a single usize is included in the binary; however any dead code elimination will remove even that.
   Under no circumstances is the complete contents of the config file included in the binary.
+* As macros run on the host, bounds checking for `usize` and `isize` will be for the host architecture, not the target architecture.
+  Be careful when using these types.
+  Rustc does perform a bounds check on literals for the target architecture, but the error message is not pretty.
 
 ## Limitations/not supported yet
 The following are not supported and will produce compiler errors:

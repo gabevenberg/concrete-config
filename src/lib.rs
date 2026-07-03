@@ -371,8 +371,15 @@ fn render_enum(item_enum: &ItemEnum, toml_str: &str) -> Result<TokenStream, Erro
         .iter()
         .find(|v| v.ident.to_string().as_str() == toml_str)
     {
+        if !matches!(e.fields, syn::Fields::Unit) {
+            return Err(Error::new(
+                e.span(),
+                "data-carrying enum variants are not supported",
+            ));
+        }
         let t = &item_enum.ident;
-        Ok(quote! {#t::#e})
+        let v = &e.ident;
+        Ok(quote! {#t::#v})
     } else {
         Err(Error::new(
             item_enum.span(),
