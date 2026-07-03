@@ -26,6 +26,21 @@ fn static_str() {
     assert_eq!(static_str::CONFIG.ssid, "test")
 }
 
+#[concrete_toml("tests/bool.toml")]
+mod bool {
+    #[root]
+    pub struct Config {
+        pub enabled: bool,
+        pub verbose: bool,
+    }
+}
+
+#[test]
+fn bool() {
+    assert!(bool::CONFIG.enabled);
+    assert!(!bool::CONFIG.verbose);
+}
+
 #[concrete_toml("tests/array.toml")]
 mod array {
     #[root]
@@ -89,6 +104,7 @@ mod full {
     #[derive(Debug, PartialEq)]
     pub struct Config {
         pub version: u32,
+        pub debug: bool,
         pub uart: Uart,
         pub leds: [Led; 2],
     }
@@ -122,6 +138,7 @@ fn full() {
         full::CONFIG,
         full::Config {
             version: 3,
+            debug: true,
             uart: full::Uart {
                 baud: 115200,
                 stop_bits: 1,

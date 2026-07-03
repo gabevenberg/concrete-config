@@ -35,6 +35,7 @@ mod config {
     #[derive(Debug, PartialEq)]
     pub struct Config {
         pub version: u32,
+        pub debug: bool,
         pub uart: Uart,
         pub leds: [Led; 2],
     }
@@ -63,6 +64,7 @@ mod config {
 }
 
 assert_eq!(config::CONFIG.version, 3);
+assert!(config::CONFIG.debug);
 assert_eq!(config::CONFIG.uart.parity, config::Parity::Even);
 assert_eq!(config::CONFIG.leds[1].pattern, [255, 128, 16]);
 assert_eq!(config::CONFIG.leds[0].pattern_time, 0.5);
@@ -72,6 +74,7 @@ And the following content in `tests/full.toml`:
 
 ```toml
 version = 3
+debug = true
 
 [uart]
 baud = 115200
@@ -100,6 +103,7 @@ mod config {
     #[derive(Debug, PartialEq)]
     pub struct Config {
         pub version: u32,
+        pub debug: bool,
         pub uart: Uart,
         pub leds: [Led; 2],
     }
@@ -128,6 +132,7 @@ mod config {
 
     pub const CONFIG: Config = Config {
         version: 3u32,
+        debug: true,
         uart: Uart {
             baud: 115200u32,
             stop_bits: 1u8,
