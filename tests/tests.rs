@@ -1,6 +1,6 @@
-use concrete_config::from_toml;
+use concrete_config::concrete_toml;
 
-#[from_toml("tests/single_int.toml")]
+#[concrete_toml("tests/single_int.toml")]
 mod single_int {
     #[root]
     pub struct Config {
@@ -13,7 +13,7 @@ fn single_int() {
     assert_eq!(single_int::CONFIG.sample_rate, 48000)
 }
 
-#[from_toml("tests/static_str.toml")]
+#[concrete_toml("tests/static_str.toml")]
 mod static_str {
     #[root]
     pub struct Config {
@@ -26,7 +26,7 @@ fn static_str() {
     assert_eq!(static_str::CONFIG.ssid, "test")
 }
 
-#[from_toml("tests/array.toml")]
+#[concrete_toml("tests/array.toml")]
 mod array {
     #[root]
     pub struct Config {
@@ -39,7 +39,7 @@ fn array() {
     assert_eq!(array::CONFIG.awnser_bytes, [42, 64])
 }
 
-#[from_toml("tests/enums.toml")]
+#[concrete_toml("tests/enums.toml")]
 mod r#enum {
 
     #[derive(Debug, Eq, PartialEq)]
@@ -62,7 +62,7 @@ fn r#enum() {
     assert_eq!(r#enum::CONFIG.log_level, r#enum::LogLevel::Warn)
 }
 
-#[from_toml("tests/full.toml")]
+#[concrete_toml("tests/full.toml")]
 mod full {
     #[root]
     #[derive(Debug, Eq, PartialEq)]

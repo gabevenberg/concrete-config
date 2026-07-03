@@ -12,18 +12,18 @@ use syn::{
 use toml::{Value, map::Map};
 
 #[proc_macro_attribute]
-pub fn from_toml(
+pub fn concrete_toml(
     args: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    from_toml_inner(args.into(), input.into())
+    concrete_toml_inner(args.into(), input.into())
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
 }
 
 //the inner function just lets us return a result, and then have the error case of that result
 //turned into a neat compiler error.
-fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream, Error> {
+fn concrete_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream, Error> {
     let path: LitStr = parse2(args)?;
     let module: ItemMod = parse2(input)?;
 
@@ -103,9 +103,10 @@ fn from_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStream,
             // This doesn't include anything in the final binary (at least if any optimization is
             // done), but it does tell cargo that the toml file is a dependency of this file, and
             // that we should rebuild when the toml file is changed.
-            const _:usize = include_bytes!(#toml_path_str).len();
+            const _: usize = include_bytes!(#toml_path_str).len();
         }
     };
+    // eprintln!("{}", output);
     Ok(output)
 }
 
@@ -159,17 +160,53 @@ fn render_value(
 ) -> Result<TokenStream, Error> {
     match ty {
         syn::Type::Path(path) => {
-            //Macro to reduce boilerplate across all the primitive type arms.
-            macro_rules! primitive_arm {
-                ($t:ty, $toml:ident) => {
-                    if let Value::$toml(n) = value {
-                        let n = *n as $t;
-                        Ok(quote! {#n})
+            //Integers are range-checked against the target type before casting, so an
+            //out-of-range value is a compile error rather than a silent wrap.
+            macro_rules! int_arm {
+                ($t:ty) => {
+                    if let Value::Integer(n) = value {
+                        match <$t>::try_from(*n) {
+                            Ok(n) => Ok(quote! {#n}),
+                            Err(_) => Err(Error::new(
+                                path.span(),
+                                format!("TOML value {} is out of range for {}", n, stringify!($t)),
+                            )),
+                        }
                     } else {
-                        Err(Error::new(
-                            path.span(),
-                            format!("Toml value is not an {}", stringify!($toml)),
-                        ))
+                        Err(Error::new(path.span(), "Toml value is not an Integer"))
+                    }
+                };
+            }
+            //Similary range-check floats, as well as special case INF, NEGINF, and NAN.
+            macro_rules! float_arm {
+                ($t:ty) => {
+                    if let Value::Float(n) = value {
+                        let n = *n;
+                        if n.is_nan() {
+                            Ok(quote! { $t::NAN })
+                        } else if n.is_infinite() {
+                            if n.is_sign_positive() {
+                                Ok(quote! { $t::INFINITY })
+                            } else {
+                                Ok(quote! { $t::NEG_INFINITY })
+                            }
+                        } else {
+                            let f = n as $t;
+                            if f.is_finite() {
+                                Ok(quote! {#f})
+                            } else {
+                                Err(Error::new(
+                                    path.span(),
+                                    format!(
+                                        "TOML value {} is out of range for {}",
+                                        n,
+                                        stringify!($t)
+                                    ),
+                                ))
+                            }
+                        }
+                    } else {
+                        Err(Error::new(path.span(), "Toml value is not a Float"))
                     }
                 };
             }
@@ -182,19 +219,32 @@ fn render_value(
                 .to_string()
                 .as_str()
             {
-                "u8" => primitive_arm!(u8, Integer),
-                "u16" => primitive_arm!(u16, Integer),
-                "u32" => primitive_arm!(u32, Integer),
-                "u64" => primitive_arm!(u64, Integer),
-                "usize" => primitive_arm!(usize, Integer),
-                "i8" => primitive_arm!(i8, Integer),
-                "i16" => primitive_arm!(i16, Integer),
-                "i32" => primitive_arm!(i32, Integer),
-                "i64" => primitive_arm!(i64, Integer),
-                "isize" => primitive_arm!(isize, Integer),
-                "f32" => primitive_arm!(f32, Float),
-                "f64" => primitive_arm!(f64, Float),
-                "bool" => primitive_arm!(bool, Boolean),
+                "u8" => int_arm!(u8),
+                "u16" => int_arm!(u16),
+                "u32" => int_arm!(u32),
+                "u64" => int_arm!(u64),
+                "u128" => int_arm!(u128),
+                "usize" => int_arm!(usize),
+                "i8" => int_arm!(i8),
+                "i16" => int_arm!(i16),
+                "i32" => int_arm!(i32),
+                "i64" => int_arm!(i64),
+                "i128" => int_arm!(i128),
+                "isize" => int_arm!(isize),
+                "f32" => float_arm!(f32),
+                "f64" => float_arm!(f64),
+                "bool" => {
+                    if let Value::Boolean(n) = value {
+                        Ok(quote! {
+                            #n
+                        })
+                    } else {
+                        Err(Error::new(
+                            path.span(),
+                            format!("Toml value is not an {}", stringify!(Boolean)),
+                        ))
+                    }
+                }
                 ident => render_composite_type(value, defs, path, ident),
             }
         }
