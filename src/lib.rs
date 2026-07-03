@@ -1,3 +1,4 @@
+#![doc= include_str!("../README.md")]
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::{
@@ -11,6 +12,39 @@ use syn::{
 };
 use toml::{Value, map::Map};
 
+/// Generates a `const` instance of a struct from a TOML file at compile time.
+///
+/// Attach this to a module. The macro's single argument is the path to a TOML
+/// file, relative to `CARGO_MANIFEST_DIR` (i.e. the directory containing your
+/// `Cargo.toml`). The module must contain all the type definitions needed to
+/// build the config, with exactly one struct marked `#[root]` — that struct
+/// corresponds to the root table of the TOML document.
+///
+/// The macro emits your type definitions unchanged, plus a `pub const CONFIG`
+/// of the root type populated from the TOML file. If a TOML key has no matching
+/// struct field, a struct field has no matching TOML key, a value is out of
+/// range for its target type, or a type otherwise doesn't line up, the macro
+/// produces a compile error.
+///
+/// # Example
+///
+/// ```rust
+/// use concrete_config::concrete_toml;
+///
+/// #[concrete_toml("tests/single_int.toml")]
+/// mod config {
+///     #[root]
+///     pub struct Config {
+///         pub sample_rate: u32,
+///     }
+/// }
+///
+/// // Access the generated constant:
+/// assert_eq!(config::CONFIG.sample_rate, 48000);
+/// ```
+///
+/// See the [crate-level documentation](crate) for the full list of supported
+/// types, limitations, and a complete example.
 #[proc_macro_attribute]
 pub fn concrete_toml(
     args: proc_macro::TokenStream,

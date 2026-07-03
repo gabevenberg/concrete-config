@@ -1,13 +1,13 @@
 # Concrete-Config
 
-`concrete-config` is an [attribute-macro](https://doc.rust-lang.org/reference/procedural-macros.html#the-proc_macro_attribute-attribute) that allows you to define a `const` constructable struct containing any build-time constants you want,
-and point to a TOML file that should contain the values that should be put into those build-time constants.
-As the generated code is just type definitions and a `const` declaration, it works perfectly in embedded `no-std` environments; in fact, that's exactly what it was designed for.
+`concrete-config` is an [attribute-macro](https://doc.rust-lang.org/reference/procedural-macros.html#the-proc_macro_attribute-attribute) for baking build-time constants into your binary.
+You define a `const`-constructable struct, and point the macro at a TOML file that fills in the values.
+As the generated code is just type definitions and a `const` declaration, it works perfectly in embedded `no_std` environments; in fact, that's exactly what it was designed for.
 
 `concrete-config` then reads your config struct, reads your TOML file, and constructs a `const` instance of your struct containing the values from the TOML file.
 Along the way, `concrete-config` checks that the TOML file matches your struct definitions, making sure that all TOML fields map to a struct field, and that all struct fields have a value.
 
-It currently supports user defined structs and unit enums, all sizes of integers and floats, booleans, `&'static str`, and fixed size arrays of any other supported type.
+It currently supports user-defined structs and unit enums, all sizes of integers and floats, booleans, `&'static str`, and fixed size arrays of any other supported type.
 
 ## Usage
 
@@ -27,8 +27,10 @@ Perhaps it is easiest to show an example:
 
 If you have the following in your rust code:
 ```rust
-#[concrete_toml("config.toml")]
-mod config{
+use concrete_config::concrete_toml;
+
+#[concrete_toml("tests/full.toml")]
+mod config {
     #[root]
     #[derive(Debug, Eq, PartialEq)]
     pub struct Config {
@@ -58,9 +60,13 @@ mod config{
         pub pattern: [u8; 3],
     }
 }
+
+assert_eq!(config::CONFIG.version, 3);
+assert_eq!(config::CONFIG.uart.parity, config::Parity::Even);
+assert_eq!(config::CONFIG.leds[1].pattern, [255, 128, 16]);
 ```
 
-And the following content in `config.toml`:
+And the following content in `tests/full.toml`:
 
 ```toml
 version = 3
@@ -134,12 +140,12 @@ mod config {
             },
         ],
     };
-    const _: usize = include_bytes!("config.toml").len();
+    const _: usize = include_bytes!("tests/full.toml").len();
 }
 ```
 
 Then, for example, in `main()`, you can use:
-```rust
+```rust ignore
 set_uart_baud(config::CONFIG.uart.baud);
 ```
 
@@ -150,7 +156,7 @@ or any field in the struct that is not in the TOML file, the macro will output a
 Some notes on the expansion:
 * The `#![allow(dead_code)]` is automatically added to the module, as it is very likely if you include enums in your config that in a given compilation not all of them will be constructed.
   This is to be expected, but cargo does not know that and marks it as dead code.
-* The `const _: usize = include_bytes!("config.toml").len()` is a way of telling cargo that this file depends on `config.toml`, and to rebuild if it changes.
+* The `const _: usize = include_bytes!("config.toml").len()` is a way of telling cargo that this file depends on `tests/full.toml`, and to rebuild if it changes.
   If no optimizations happen, a single usize is included in the binary; however any dead code elimination will remove even that.
   Under no circumstances is the complete contents of the config file included in the binary.
 
@@ -164,6 +170,7 @@ The following are not supported and will produce compiler errors:
     * Tuple structs
     * Option support for fields that may or may not be in the TOML file
     * Attribute for default values
+    * custom `const` declaration name
 * Maybe, only if demand is there:
     * Serialization formats other than TOML
     * Specialized parsing for specific types. Think `base64` encoded strings to a `&'static [u8]`, or `IpAddr` types.
