@@ -47,6 +47,7 @@
         default = pkgs.mkShell {
           buildInputs = with pkgs; [
             (rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
+            cargo-expand
           ];
         };
       });

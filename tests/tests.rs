@@ -30,13 +30,13 @@ fn static_str() {
 mod array {
     #[root]
     pub struct Config {
-        pub awnser_bytes: [u8; 2],
+        pub answer_bytes: [u8; 2],
     }
 }
 
 #[test]
 fn array() {
-    assert_eq!(array::CONFIG.awnser_bytes, [42, 64])
+    assert_eq!(array::CONFIG.answer_bytes, [42, 64])
 }
 
 #[concrete_toml("tests/enums.toml")]
