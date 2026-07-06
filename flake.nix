@@ -28,9 +28,6 @@
           pkgs = (
             import nixpkgs {
               overlays = [(import rust-overlay)];
-              config = {
-                  allowUnfree = true;
-              };
               inherit system;
             }
           );

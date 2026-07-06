@@ -1,3 +1,4 @@
+#![allow(clippy::assertions_on_constants)]
 use concrete_config::concrete_toml;
 
 #[concrete_toml("tests/single_int.toml")]
@@ -52,6 +53,19 @@ mod array {
 #[test]
 fn array() {
     assert_eq!(array::CONFIG.answer_bytes, [42, 64])
+}
+
+#[concrete_toml("tests/slice.toml")]
+mod slice {
+    #[root]
+    pub struct Config {
+        pub answer_bytes: &'static [u8],
+    }
+}
+
+#[test]
+fn slice() {
+    assert_eq!(slice::CONFIG.answer_bytes, [42, 64])
 }
 
 #[concrete_toml("tests/floats.toml")]
@@ -131,7 +145,7 @@ mod full {
     #[derive(Debug, PartialEq)]
     pub struct Led {
         pub pin: u8,
-        pub pattern: [u8; 3],
+        pub pattern: &'static [u8],
         pub pattern_time: f32,
     }
 }
@@ -152,12 +166,12 @@ fn full() {
             leds: [
                 full::Led {
                     pin: 10,
-                    pattern: [64, 255, 32],
+                    pattern: &[64, 255, 32],
                     pattern_time: 0.5,
                 },
                 full::Led {
                     pin: 12,
-                    pattern: [255, 128, 16],
+                    pattern: &[255, 128, 16],
                     pattern_time: 1.25,
                 },
             ]

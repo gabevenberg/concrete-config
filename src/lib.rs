@@ -7,8 +7,8 @@ use std::{
     path::PathBuf,
 };
 use syn::{
-    Error, Expr, ExprLit, Item, ItemEnum, ItemMod, ItemStruct, Lit, LitStr, TypeArray,
-    TypeReference, parse2, spanned::Spanned,
+    Error, Expr, ExprLit, Item, ItemEnum, ItemMod, ItemStruct, Lit, LitStr, Type, TypeArray,
+    TypeReference, TypeSlice, parse2, spanned::Spanned,
 };
 use toml::{Value, map::Map};
 
@@ -193,7 +193,7 @@ fn render_value(
     defs: &HashMap<String, TypeDef>,
 ) -> Result<TokenStream, Error> {
     match ty {
-        syn::Type::Path(path) => {
+        Type::Path(path) => {
             //Integers are range-checked against the target type before casting, so an
             //out-of-range value is a compile error rather than a silent wrap.
             macro_rules! int_arm {
@@ -279,7 +279,7 @@ fn render_value(
                 ident => render_composite_type(value, defs, path, ident),
             }
         }
-        syn::Type::Array(array) => {
+        Type::Array(array) => {
             if let TypeArray {
                 len: Expr::Lit(ExprLit {
                     lit: Lit::Int(l), ..
@@ -290,11 +290,7 @@ fn render_value(
             {
                 if let Value::Array(a) = value {
                     if a.len() == l.base10_parse()? {
-                        let entries: Vec<TokenStream> = a
-                            .iter()
-                            .map(|v| render_value(v, e, defs))
-                            .collect::<Result<Vec<TokenStream>, Error>>()?;
-                        Ok(quote! {[#(#entries),*]})
+                        render_array(a, e, defs)
                     } else {
                         Err(Error::new(
                             array.span(),
@@ -311,25 +307,29 @@ fn render_value(
                 ))
             }
         }
-        syn::Type::Reference(reference) => {
-            if let TypeReference {
-                lifetime: Some(lt),
-                elem: e,
-                ..
-            } = reference
-                && matches!(e.as_ref(), syn::Type::Path(p) if p.path.is_ident("str"))
-                && lt.ident == "static"
-            {
+        Type::Reference(TypeReference {
+            lifetime: Some(lt),
+            elem,
+            ..
+        }) if lt.ident == "static" => match elem.as_ref() {
+            Type::Path(p) if p.path.is_ident("str") => {
                 if let Value::String(s) = value {
                     Ok(quote! {#s})
                 } else {
-                    Err(Error::new(reference.span(), "Toml value is not a string"))
+                    Err(Error::new(ty.span(), "Toml value is not a string"))
                 }
-            } else {
-                Err(Error::new(reference.span(), "unsupported type"))
             }
-        }
-        syn::Type::Tuple(tup) => Err(Error::new(tup.span(), "Tuple support not implemented yet")),
+            Type::Slice(TypeSlice { elem, .. }) => {
+                if let Value::Array(a) = value {
+                    let entries = render_array(a, elem, defs)?;
+                    Ok(quote! {&#entries})
+                } else {
+                    Err(Error::new(ty.span(), "Toml value is not an array"))
+                }
+            }
+            _ => Err(Error::new(ty.span(), "Unsupported type")),
+        },
+        Type::Tuple(tup) => Err(Error::new(tup.span(), "Tuple support not implemented yet")),
         _ => Err(Error::new(ty.span(), "Unsupported type")),
     }
 }
@@ -360,6 +360,18 @@ fn render_composite_type(
     } else {
         Err(Error::new(path.span(), "Path not in defs."))
     }
+}
+
+fn render_array(
+    values: &[Value],
+    elem: &Type,
+    defs: &HashMap<String, TypeDef>,
+) -> Result<TokenStream, Error> {
+    let entries: Vec<TokenStream> = values
+        .iter()
+        .map(|v| render_value(v, elem, defs))
+        .collect::<Result<Vec<TokenStream>, Error>>()?;
+    Ok(quote! {[#(#entries),*]})
 }
 
 fn render_enum(item_enum: &ItemEnum, toml_str: &str) -> Result<TokenStream, Error> {
