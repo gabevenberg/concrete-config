@@ -68,6 +68,21 @@ fn slice() {
     assert_eq!(slice::CONFIG.answer_bytes, [42, 64])
 }
 
+#[concrete_toml("tests/tuple.toml")]
+mod tuple {
+    #[root]
+    pub struct Config {
+        pub sensor: (u8, &'static str),
+        pub device_id: (u16,),
+    }
+}
+
+#[test]
+fn tuple() {
+    assert_eq!(tuple::CONFIG.sensor, (4, "bme280"));
+    assert_eq!(tuple::CONFIG.device_id, (1001,));
+}
+
 #[concrete_toml("tests/floats.toml")]
 mod floats {
     #[root]

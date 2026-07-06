@@ -7,7 +7,7 @@ As the generated code is just type definitions and a `const` declaration, it wor
 `concrete-config` then reads your config struct, reads your TOML file, and constructs a `const` instance of your struct containing the values from the TOML file.
 Along the way, `concrete-config` checks that the TOML file matches your struct definitions, making sure that all TOML fields map to a struct field, and that all struct fields have a value.
 
-It currently supports user-defined structs and unit enums, all sizes of integers and floats, booleans, `&'static str`, `&'static [T]` slices, and fixed size arrays of any other supported type.
+It currently supports user-defined structs and unit enums, all sizes of integers and floats, booleans, tuples, `&'static str`, `&'static [T]` slices, and fixed size arrays of any other supported type.
 
 ## Usage
 
@@ -179,7 +179,6 @@ Some notes on the expansion:
 The following are not supported and will produce compiler errors:
 
 * Future features:
-    * Tuple support
     * Data carrying enums
     * Tuple structs
     * Option support for fields that may or may not be in the TOML file

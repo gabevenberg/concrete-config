@@ -8,7 +8,7 @@ use std::{
 };
 use syn::{
     Error, Expr, ExprLit, Item, ItemEnum, ItemMod, ItemStruct, Lit, LitStr, Type, TypeArray,
-    TypeReference, TypeSlice, parse2, spanned::Spanned,
+    TypeReference, TypeSlice, TypeTuple, parse2, spanned::Spanned,
 };
 use toml::{Value, map::Map};
 
@@ -329,7 +329,13 @@ fn render_value(
             }
             _ => Err(Error::new(ty.span(), "Unsupported type")),
         },
-        Type::Tuple(tup) => Err(Error::new(tup.span(), "Tuple support not implemented yet")),
+        Type::Tuple(tup) => {
+            if let Value::Array(a) = value {
+                render_tuple(a, tup, defs)
+            } else {
+                Err(Error::new(tup.span(), "Toml value is not an array"))
+            }
+        }
         _ => Err(Error::new(ty.span(), "Unsupported type")),
     }
 }
@@ -359,6 +365,26 @@ fn render_composite_type(
         }
     } else {
         Err(Error::new(path.span(), "Path not in defs."))
+    }
+}
+
+fn render_tuple(
+    values: &[Value],
+    tup: &TypeTuple,
+    defs: &HashMap<String, TypeDef>,
+) -> Result<TokenStream, Error> {
+    if values.len() == tup.elems.len() {
+        let entries = values
+            .iter()
+            .zip(&tup.elems)
+            .map(|(v, t)| render_value(v, t, defs))
+            .collect::<Result<Vec<TokenStream>, Error>>()?;
+        Ok(quote! {(#(#entries,)*)})
+    } else {
+        Err(Error::new(
+            tup.span(),
+            "Toml array and tuple differ in length",
+        ))
     }
 }
 
