@@ -1,5 +1,6 @@
 version = 3
 debug = true
+sensor = [4, "bme280"]
 
 [uart]
 baud = 115200

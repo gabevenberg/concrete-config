@@ -138,6 +138,7 @@ mod full {
     pub struct Config {
         pub version: u32,
         pub debug: bool,
+        pub sensor: (u8, &'static str),
         pub uart: Uart,
         pub leds: [Led; 2],
     }
@@ -172,6 +173,7 @@ fn full() {
         full::Config {
             version: 3,
             debug: true,
+            sensor: (4, "bme280"),
             uart: full::Uart {
                 baud: 115200,
                 stop_bits: 1,
