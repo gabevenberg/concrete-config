@@ -7,8 +7,8 @@ use std::{
     path::PathBuf,
 };
 use syn::{
-    Error, Expr, ExprLit, Field, Item, ItemEnum, ItemMod, ItemStruct, Lit, LitStr, Type, TypeArray,
-    TypePath, TypeReference, TypeSlice, parse2, spanned::Spanned,
+    Error, Expr, ExprLit, Field, Fields, Item, ItemEnum, ItemMod, ItemStruct, Lit, LitStr, Type,
+    TypeArray, TypePath, TypeReference, TypeSlice, parse2, spanned::Spanned,
 };
 use toml::{Value, map::Map};
 
@@ -339,24 +339,24 @@ fn render_value(
     }
 }
 
-fn render_struct(
+fn render_fields(
     value: &Value,
-    st: &ItemStruct,
+    fields: &Fields,
     defs: &HashMap<String, TypeDef>,
+    span: Span,
 ) -> Result<TokenStream, Error> {
-    match &st.fields {
+    match &fields {
         syn::Fields::Named(fields_named) => {
             if let Value::Table(t) = value {
                 let body = render_anon_struct(
                     t,
                     &fields_named.named.iter().collect::<Vec<&Field>>(),
-                    st.span(),
+                    span,
                     defs,
                 )?;
-                let ident = &st.ident;
-                Ok(quote! {#ident #body})
+                Ok(body)
             } else {
-                Err(Error::new(st.span(), "Toml value is not a table"))
+                Err(Error::new(span, "Toml value is not a table"))
             }
         }
         syn::Fields::Unnamed(fields_unnamed) => {
@@ -371,8 +371,7 @@ fn render_struct(
                     fields_unnamed.span(),
                     defs,
                 )?;
-                let ident = &st.ident;
-                Ok(quote! {#ident #body})
+                Ok(body)
             } else {
                 Err(Error::new(
                     fields_unnamed.span(),
@@ -380,10 +379,35 @@ fn render_struct(
                 ))
             }
         }
-        syn::Fields::Unit => Err(Error::new(
+        syn::Fields::Unit => {
+            if let Value::Array(a) = value
+                && a.is_empty()
+            {
+                Ok(TokenStream::new())
+            } else {
+                Err(Error::new(
+                    fields.span(),
+                    "Unit type must have 0 len TOML array as value.",
+                ))
+            }
+        }
+    }
+}
+
+fn render_struct(
+    value: &Value,
+    st: &ItemStruct,
+    defs: &HashMap<String, TypeDef>,
+) -> Result<TokenStream, Error> {
+    if matches!(&st.fields, Fields::Unit) {
+        Err(Error::new(
             st.span(),
-            "Why would you want to put a unit struct in a config? Like, what purpose does that serve? Anyway, I wont allow it.",
-        )),
+            "Why would you want to put a unit struct in a config? Like, what purpose does that serve? Anyway, I wont allow it.\nTheres not even anything in the codebase that would break, it works fine, I just wont allow it.",
+        ))
+    } else {
+        let body = render_fields(value, &st.fields, defs, st.span())?;
+        let ident = &st.ident;
+        Ok(quote! {#ident #body})
     }
 }
 
@@ -396,13 +420,7 @@ fn render_composite_type(
     if let Some(i) = defs.get(ident) {
         match i {
             TypeDef::Struct(item_struct) => render_struct(value, item_struct, defs),
-            TypeDef::Enum(item_enum) => {
-                if let Value::String(s) = value {
-                    render_enum(item_enum, s)
-                } else {
-                    Err(Error::new(item_enum.span(), "Toml value is not a String"))
-                }
-            }
+            TypeDef::Enum(item_enum) => render_enum(value, item_enum, defs),
         }
     } else {
         Err(Error::new(path.span(), "Path not in defs."))
@@ -439,25 +457,57 @@ fn render_array(
     Ok(quote! {[#(#entries),*]})
 }
 
-fn render_enum(item_enum: &ItemEnum, toml_str: &str) -> Result<TokenStream, Error> {
-    if let Some(e) = item_enum
-        .variants
-        .iter()
-        .find(|v| v.ident.to_string().as_str() == toml_str)
-    {
-        if !matches!(e.fields, syn::Fields::Unit) {
-            return Err(Error::new(
-                e.span(),
-                "data-carrying enum variants are not supported",
-            ));
+fn render_enum(
+    value: &Value,
+    item_enum: &ItemEnum,
+    defs: &HashMap<String, TypeDef>,
+) -> Result<TokenStream, Error> {
+    let t = &item_enum.ident;
+    match value {
+        Value::String(s) => {
+            if let Some(e) = item_enum
+                .variants
+                .iter()
+                .find(|v| v.ident.to_string().as_str() == s)
+            {
+                let i = &e.ident;
+                Ok(quote! {#t::#i})
+            } else {
+                Err(Error::new(
+                    item_enum.span(),
+                    format!("Could not find enum variant for toml value {}", s),
+                ))
+            }
         }
-        let t = &item_enum.ident;
-        let v = &e.ident;
-        Ok(quote! {#t::#v})
-    } else {
-        Err(Error::new(
+        Value::Table(m) => {
+            if m.len() != 1 {
+                return Err(Error::new(
+                    item_enum.span(),
+                    "Toml table for and Enum must have one top level entry, the identifier.",
+                ));
+            }
+            let s = m
+                .keys()
+                .next()
+                .expect("we just verified this had a len of 1");
+            if let Some(e) = item_enum
+                .variants
+                .iter()
+                .find(|v| v.ident.to_string().as_str() == s)
+            {
+                let i = &e.ident;
+                let body = render_fields(&value[s], &e.fields, defs, e.span())?;
+                Ok(quote! {#t::#i #body})
+            } else {
+                Err(Error::new(
+                    item_enum.span(),
+                    format!("Could not find enum variant for toml value {}", s),
+                ))
+            }
+        }
+        _ => Err(Error::new(
             item_enum.span(),
-            format!("Toml string does not match any variant: {}", toml_str),
-        ))
+            "Invalid Toml Value for Enum. Must be String or Table with one entry",
+        )),
     }
 }

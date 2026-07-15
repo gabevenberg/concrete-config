@@ -1,1 +1,4 @@
-log_level = "Warn"
+continuous = "Continuous"
+continuous_via_table.Continuous = []
+threshold.Threshold = [3.3]
+scheduled.Scheduled = { interval_ms = 500, repeat = true }

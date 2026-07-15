@@ -1,6 +1,6 @@
 version = 3
 debug = true
-sensor = [4, "bme280"]
+sensor = [4, "bme280", {Threshold=[3.3]}]
 coordinates=[1.0, 3.5]
 
 [uart]

@@ -7,7 +7,7 @@ As the generated code is just type definitions and a `const` declaration, it wor
 `concrete-config` then reads your config struct, reads your TOML file, and constructs a `const` instance of your struct containing the values from the TOML file.
 Along the way, `concrete-config` checks that the TOML file matches your struct definitions, making sure that all TOML fields map to a struct field, and that all struct fields have a value.
 
-It currently supports user-defined structs and unit enums, all sizes of integers and floats, booleans, tuples, `&'static str`, `&'static [T]` slices, and fixed size arrays of any other supported type.
+It currently supports user-defined structs and enums, all sizes of integers and floats, booleans, tuples, `&'static str`, `&'static [T]` slices, and fixed size arrays of any other supported type.
 
 ## Usage
 
@@ -18,7 +18,11 @@ The module contains all type definitions needed to construct your root struct.
 
 Some things to keep in mind:
 * TOML keys must match field names exactly. `concrete-config` does not perform any case normalization.
-* Same for enums, the TOML string must match the capitalization of the enum variant exactly.
+* For enums, `concrete-config` follows `serde`'s 'externally-tagged' convention.
+  That means an enum of the form `Foo::Bar(42)` must be represented as `Foo.Bar=[42]`, `Foo={Bar=[42]}`,
+  or some other TOML equivalent. (The array brackets are there because `Foo::Bar` is a tuple-like variant.)
+* There is a special case for unit enum variants, you can simply write the variant name as a string,
+  without having to have a subtable, so `Foo::Baz` can be written as `Foo="Baz"`, instead of `Foo.Baz=[]`.
 * You must mark exactly one struct as `#[root]`. This is the struct that corresponds to the root table of the TOML document.
 * Any `#[derive()]`s or other attributes not owned by `concrete-config` will be passed through.
 * The resulting `const` declaration will be named `CONFIG`. This is currently hardcoded, but if there is need I could make it another argument to the proc-macro.
@@ -36,12 +40,19 @@ mod config {
     pub struct Config {
         pub version: u32,
         pub debug: bool,
-        pub sensor: (u8, &'static str),
+        pub sensor: (u8, &'static str, Trigger),
         pub uart: Uart,
         pub leds: [Led; 2],
         pub coordinates: Coordinates,
     }
- 
+
+    #[derive(Debug, PartialEq)]
+    pub enum Trigger {
+        Continuous,
+        Threshold(f32),
+        Scheduled { interval_ms: u32, repeat: bool },
+    }
+
     #[derive(Debug, PartialEq)]
     pub struct Coordinates(pub f32, pub f32);
 
@@ -70,8 +81,8 @@ mod config {
 
 assert_eq!(config::CONFIG.version, 3);
 assert!(config::CONFIG.debug);
-assert_eq!(config::CONFIG.sensor, (4, "bme280"));
-assert_eq!(config::CONFIG.coordinates, config::Coordinates(1.0, 3.5) );
+assert_eq!(config::CONFIG.sensor, (4, "bme280", config::Trigger::Threshold(3.3)));
+assert_eq!(config::CONFIG.coordinates, config::Coordinates(1.0, 3.5));
 assert_eq!(config::CONFIG.uart.parity, config::Parity::Even);
 assert_eq!(config::CONFIG.leds[1].pattern, &[255, 128, 16]);
 assert_eq!(config::CONFIG.leds[0].pattern_time, 0.5);
@@ -82,7 +93,7 @@ And the following content in `tests/full.toml`:
 ```toml
 version = 3
 debug = true
-sensor = [4, "bme280"]
+sensor = [4, "bme280", {Threshold=[3.3]}]
 coordinates = [1.0, 3.5]
 
 [uart]
@@ -113,12 +124,19 @@ mod config {
     pub struct Config {
         pub version: u32,
         pub debug: bool,
-        pub sensor: (u8, &'static str),
+        pub sensor: (u8, &'static str, Trigger),
         pub uart: Uart,
         pub leds: [Led; 2],
         pub coordinates: Coordinates,
     }
-    
+
+    #[derive(Debug, PartialEq)]
+    pub enum Trigger {
+        Continuous,
+        Threshold(f32),
+        Scheduled { interval_ms: u32, repeat: bool },
+    }
+
     #[derive(Debug, PartialEq)]
     pub struct Coordinates(pub f32, pub f32);
 
@@ -147,7 +165,7 @@ mod config {
     pub const CONFIG: Config = Config {
         version: 3u32,
         debug: true,
-        sensor: (4u8, "bme280"),
+        sensor: (4u8, "bme280", Trigger::Threshold(3.3)),
         uart: Uart {
             baud: 115200u32,
             stop_bits: 1u8,
@@ -195,7 +213,6 @@ Some notes on the expansion:
 The following are not supported and will produce compiler errors:
 
 * Future features:
-    * Data carrying enums
     * Option support for fields that may or may not be in the TOML file
     * Attribute for default values
     * custom `const` declaration name

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Support for tuple structs
+- Support for tuple enum variants and struct enum variants.
 
 ### Changed
 

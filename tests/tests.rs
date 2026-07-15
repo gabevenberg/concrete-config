@@ -128,24 +128,37 @@ fn floats() {
 #[concrete_toml("tests/enums.toml")]
 mod r#enum {
 
-    #[derive(Debug, Eq, PartialEq)]
-    pub enum LogLevel {
-        Trace,
-        Debug,
-        Info,
-        Warn,
-        Error,
+    #[derive(Debug, PartialEq)]
+    pub enum Trigger {
+        Continuous,
+        Threshold(f32),
+        Scheduled { interval_ms: u32, repeat: bool },
     }
 
     #[root]
     pub struct Config {
-        pub log_level: LogLevel,
+        pub continuous: Trigger,
+        pub continuous_via_table: Trigger,
+        pub threshold: Trigger,
+        pub scheduled: Trigger,
     }
 }
 
 #[test]
 fn r#enum() {
-    assert_eq!(r#enum::CONFIG.log_level, r#enum::LogLevel::Warn)
+    assert_eq!(
+        r#enum::CONFIG.continuous_via_table,
+        r#enum::Trigger::Continuous
+    );
+    assert_eq!(r#enum::CONFIG.continuous, r#enum::Trigger::Continuous);
+    assert_eq!(r#enum::CONFIG.threshold, r#enum::Trigger::Threshold(3.3));
+    assert_eq!(
+        r#enum::CONFIG.scheduled,
+        r#enum::Trigger::Scheduled {
+            interval_ms: 500,
+            repeat: true
+        }
+    );
 }
 
 #[concrete_toml("tests/full.toml")]
@@ -155,10 +168,17 @@ mod full {
     pub struct Config {
         pub version: u32,
         pub debug: bool,
-        pub sensor: (u8, &'static str),
+        pub sensor: (u8, &'static str, Trigger),
         pub uart: Uart,
         pub leds: [Led; 2],
         pub coordinates: Coordinates,
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub enum Trigger {
+        Continuous,
+        Threshold(f32),
+        Scheduled { interval_ms: u32, repeat: bool },
     }
 
     #[derive(Debug, PartialEq)]
@@ -194,7 +214,7 @@ fn full() {
         full::Config {
             version: 3,
             debug: true,
-            sensor: (4, "bme280"),
+            sensor: (4, "bme280", full::Trigger::Threshold(3.3)),
             uart: full::Uart {
                 baud: 115200,
                 stop_bits: 1,
