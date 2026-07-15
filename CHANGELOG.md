@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Support for tuple structs
-- Support for tuple enum variants and struct enum variants.
-
 ### Changed
 
 ### Deprecated
@@ -21,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 ### Security
+
+## [1.0.0] - 2026-07-15
+
+### Added
+
+- Support for tuple structs
+- Support for tuple enum variants and struct enum variants.
 
 ## [0.2.0] - 2026-07-06
 
@@ -42,6 +46,7 @@ Initial release.
 - Booleans and `&'static str`.
 - Fixed-size arrays of any supported type.
 
-[Unreleased]: https://github.com/gabevenberg/concrete-config/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/gabevenberg/concrete-config/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/gabevenberg/concrete-config/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/gabevenberg/concrete-config/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gabevenberg/concrete-config/releases/tag/v0.1.0
