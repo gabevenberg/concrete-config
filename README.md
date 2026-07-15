@@ -39,7 +39,11 @@ mod config {
         pub sensor: (u8, &'static str),
         pub uart: Uart,
         pub leds: [Led; 2],
+        pub coordinates: Coordinates,
     }
+ 
+    #[derive(Debug, PartialEq)]
+    pub struct Coordinates(pub f32, pub f32);
 
     #[derive(Debug, Eq, PartialEq)]
     pub struct Uart {
@@ -67,6 +71,7 @@ mod config {
 assert_eq!(config::CONFIG.version, 3);
 assert!(config::CONFIG.debug);
 assert_eq!(config::CONFIG.sensor, (4, "bme280"));
+assert_eq!(config::CONFIG.coordinates, config::Coordinates(1.0, 3.5) );
 assert_eq!(config::CONFIG.uart.parity, config::Parity::Even);
 assert_eq!(config::CONFIG.leds[1].pattern, &[255, 128, 16]);
 assert_eq!(config::CONFIG.leds[0].pattern_time, 0.5);
@@ -78,6 +83,7 @@ And the following content in `tests/full.toml`:
 version = 3
 debug = true
 sensor = [4, "bme280"]
+coordinates = [1.0, 3.5]
 
 [uart]
 baud = 115200
@@ -110,7 +116,11 @@ mod config {
         pub sensor: (u8, &'static str),
         pub uart: Uart,
         pub leds: [Led; 2],
+        pub coordinates: Coordinates,
     }
+    
+    #[derive(Debug, PartialEq)]
+    pub struct Coordinates(pub f32, pub f32);
 
     #[derive(Debug, Eq, PartialEq)]
     pub struct Uart {
@@ -156,6 +166,7 @@ mod config {
                 pattern_time: 1.25f32,
             },
         ],
+        coordinates: Coordinates(1.0, 3.5),
     };
     const _: usize = include_bytes!("tests/full.toml").len();
 }
@@ -185,7 +196,6 @@ The following are not supported and will produce compiler errors:
 
 * Future features:
     * Data carrying enums
-    * Tuple structs
     * Option support for fields that may or may not be in the TOML file
     * Attribute for default values
     * custom `const` declaration name

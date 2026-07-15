@@ -82,6 +82,23 @@ fn tuple() {
     assert_eq!(tuple::CONFIG.sensor, (4, "bme280"));
     assert_eq!(tuple::CONFIG.device_id, (1001,));
 }
+#[concrete_toml("tests/tuple_struct.toml")]
+mod tuple_struct {
+    #[root]
+    pub struct Config {
+        pub sensor: Sensor,
+        pub device_id: DeviceId,
+    }
+    pub struct Sensor(pub u8, pub &'static str);
+    pub struct DeviceId(pub u16);
+}
+
+#[test]
+fn tuple_struct() {
+    assert_eq!(tuple_struct::CONFIG.sensor.0, 4);
+    assert_eq!(tuple_struct::CONFIG.sensor.1, "bme280");
+    assert_eq!(tuple_struct::CONFIG.device_id.0, 1001);
+}
 
 #[concrete_toml("tests/floats.toml")]
 mod floats {
@@ -141,7 +158,11 @@ mod full {
         pub sensor: (u8, &'static str),
         pub uart: Uart,
         pub leds: [Led; 2],
+        pub coordinates: Coordinates,
     }
+
+    #[derive(Debug, PartialEq)]
+    pub struct Coordinates(pub f32, pub f32);
 
     #[derive(Debug, Eq, PartialEq)]
     pub struct Uart {
@@ -180,6 +201,7 @@ fn full() {
                 parity: full::Parity::Even,
                 data_bits: 8,
             },
+            coordinates: full::Coordinates(1.0, 3.5),
             leds: [
                 full::Led {
                     pin: 10,

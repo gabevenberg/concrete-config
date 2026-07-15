@@ -1,0 +1,2 @@
+sensor = [4, "bme280"]
+device_id = [1001]

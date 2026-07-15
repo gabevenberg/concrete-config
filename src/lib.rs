@@ -1,5 +1,5 @@
 #![doc= include_str!("../README.md")]
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use std::{
     collections::{HashMap, HashSet},
@@ -7,8 +7,8 @@ use std::{
     path::PathBuf,
 };
 use syn::{
-    Error, Expr, ExprLit, Item, ItemEnum, ItemMod, ItemStruct, Lit, LitStr, Type, TypeArray,
-    TypeReference, TypeSlice, TypeTuple, parse2, spanned::Spanned,
+    Error, Expr, ExprLit, Field, Item, ItemEnum, ItemMod, ItemStruct, Lit, LitStr, Type, TypeArray,
+    TypePath, TypeReference, TypeSlice, parse2, spanned::Spanned,
 };
 use toml::{Value, map::Map};
 
@@ -116,13 +116,7 @@ fn concrete_toml_inner(args: TokenStream, input: TokenStream) -> Result<TokenStr
         }
     }
 
-    let con = render_struct(
-        toml_value
-            .as_table()
-            .expect("root of toml file is always a table"),
-        &root_struct,
-        &defs,
-    )?;
+    let con = render_struct(&toml_value, &root_struct, &defs)?;
     let root_ident = &root_struct.ident;
     let mod_name = &module.ident;
     let toml_path_str = toml_path.to_str().expect("TOML path is not valid UTF-8");
@@ -150,18 +144,19 @@ enum TypeDef<'a> {
     Enum(&'a ItemEnum),
 }
 
-fn render_struct(
+fn render_anon_struct(
     value: &Map<String, Value>,
-    st: &ItemStruct,
+    fields: &[&Field],
+    span: Span,
     defs: &HashMap<String, TypeDef>,
 ) -> Result<TokenStream, Error> {
     let mut constructed: HashSet<String> = HashSet::new();
     let mut streams: Vec<TokenStream> = Vec::new();
-    for field in &st.fields {
+    for field in fields {
         let ident = field
             .ident
             .as_ref()
-            .ok_or_else(|| Error::new(field.span(), "Tuple structs are not yet supported"))?;
+            .expect("called render_anon_struct on unnamed fields");
         let ident_str = ident.to_string();
         if let Some(v) = value.get(&ident_str) {
             let value = render_value(v, &field.ty, defs)?;
@@ -170,7 +165,7 @@ fn render_struct(
             constructed.insert(ident_str);
         } else {
             return Err(Error::new(
-                st.span(),
+                span,
                 format!("found field with no matching TOML value: {}", ident_str),
             ));
         }
@@ -178,13 +173,12 @@ fn render_struct(
     for entry in value.keys() {
         if !constructed.contains(entry) {
             return Err(Error::new(
-                st.span(),
+                span,
                 format!("Unrecognized key in TOML table: {}", entry),
             ));
         }
     }
-    let ident = &st.ident;
-    Ok(quote! {#ident { #(#streams),*}})
+    Ok(quote! {{ #(#streams),*}})
 }
 
 fn render_value(
@@ -331,7 +325,12 @@ fn render_value(
         },
         Type::Tuple(tup) => {
             if let Value::Array(a) = value {
-                render_tuple(a, tup, defs)
+                render_tuple(
+                    a,
+                    &tup.elems.iter().collect::<Vec<&Type>>(),
+                    tup.span(),
+                    defs,
+                )
             } else {
                 Err(Error::new(tup.span(), "Toml value is not an array"))
             }
@@ -340,21 +339,63 @@ fn render_value(
     }
 }
 
+fn render_struct(
+    value: &Value,
+    st: &ItemStruct,
+    defs: &HashMap<String, TypeDef>,
+) -> Result<TokenStream, Error> {
+    match &st.fields {
+        syn::Fields::Named(fields_named) => {
+            if let Value::Table(t) = value {
+                let body = render_anon_struct(
+                    t,
+                    &fields_named.named.iter().collect::<Vec<&Field>>(),
+                    st.span(),
+                    defs,
+                )?;
+                let ident = &st.ident;
+                Ok(quote! {#ident #body})
+            } else {
+                Err(Error::new(st.span(), "Toml value is not a table"))
+            }
+        }
+        syn::Fields::Unnamed(fields_unnamed) => {
+            if let Value::Array(a) = value {
+                let body = render_tuple(
+                    a,
+                    &fields_unnamed
+                        .unnamed
+                        .iter()
+                        .map(|f| &f.ty)
+                        .collect::<Vec<&Type>>(),
+                    fields_unnamed.span(),
+                    defs,
+                )?;
+                let ident = &st.ident;
+                Ok(quote! {#ident #body})
+            } else {
+                Err(Error::new(
+                    fields_unnamed.span(),
+                    "Toml value is not an array",
+                ))
+            }
+        }
+        syn::Fields::Unit => Err(Error::new(
+            st.span(),
+            "Why would you want to put a unit struct in a config? Like, what purpose does that serve? Anyway, I wont allow it.",
+        )),
+    }
+}
+
 fn render_composite_type(
     value: &Value,
-    defs: &HashMap<String, TypeDef<'_>>,
-    path: &syn::TypePath,
+    defs: &HashMap<String, TypeDef>,
+    path: &TypePath,
     ident: &str,
 ) -> Result<TokenStream, Error> {
     if let Some(i) = defs.get(ident) {
         match i {
-            TypeDef::Struct(item_struct) => {
-                if let Value::Table(t) = value {
-                    render_struct(t, item_struct, defs)
-                } else {
-                    Err(Error::new(item_struct.span(), "Toml value is not a table"))
-                }
-            }
+            TypeDef::Struct(item_struct) => render_struct(value, item_struct, defs),
             TypeDef::Enum(item_enum) => {
                 if let Value::String(s) = value {
                     render_enum(item_enum, s)
@@ -370,21 +411,19 @@ fn render_composite_type(
 
 fn render_tuple(
     values: &[Value],
-    tup: &TypeTuple,
+    types: &[&Type],
+    span: Span,
     defs: &HashMap<String, TypeDef>,
 ) -> Result<TokenStream, Error> {
-    if values.len() == tup.elems.len() {
+    if values.len() == types.len() {
         let entries = values
             .iter()
-            .zip(&tup.elems)
+            .zip(types.iter())
             .map(|(v, t)| render_value(v, t, defs))
             .collect::<Result<Vec<TokenStream>, Error>>()?;
         Ok(quote! {(#(#entries,)*)})
     } else {
-        Err(Error::new(
-            tup.span(),
-            "Toml array and tuple differ in length",
-        ))
+        Err(Error::new(span, "Toml array and tuple differ in length"))
     }
 }
 
